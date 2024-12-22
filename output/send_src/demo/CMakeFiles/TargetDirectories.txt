@@ -1,3 +1,0 @@
-/home/oem/RealTimeChart/output/send_src/demo/CMakeFiles/rebuild_cache.dir
-/home/oem/RealTimeChart/output/send_src/demo/CMakeFiles/edit_cache.dir
-/home/oem/RealTimeChart/output/send_src/demo/CMakeFiles/test2.dir

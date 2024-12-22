@@ -7,6 +7,7 @@
 #include <mutex>
 #include <condition_variable>
 #define EigenOn
+#define lcmOn
 
 #ifdef EigenOn
 #include <Eigen/Dense>
@@ -18,6 +19,19 @@
 
 namespace dz_communicate
 {
+#ifdef EigenOn
+#ifdef lcmOn
+        class SSMData
+        {
+        public:
+                SSMData() : name(""), time(-1.0) {}
+                ~SSMData() {}
+                std::string name;
+                double time;
+                Eigen::VectorXd data;
+        };
+#endif
+#endif
 #define queue_size 10
         class dz_com
         {
@@ -37,6 +51,13 @@ namespace dz_communicate
 #ifdef EigenOn
                 void write(Eigen::MatrixXd &data, bool socket_or_sm);
                 Eigen::MatrixXd read(bool socket_or_sm);
+#ifdef lcmOn
+                void write(SSMData &data, bool socket_or_sm);
+                SSMData readssm(bool socket_or_sm);
+                void squewrite(std::vector<SSMData> &data, bool socket_or_sm);
+                bool squeread(std::vector<SSMData> &data, bool socket_or_sm);
+
+#endif
 #endif
 
         protected:

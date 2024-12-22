@@ -3,6 +3,7 @@
 #include <iostream>
 #include <string>
 #include <Eigen/Dense>
+#include "dz_sm_socket_top.h"
 namespace dz_io
 {
 #define PARAM_PATH "./"
@@ -21,7 +22,11 @@ namespace dz_io
         void write(const std::string &param_name, const Eigen::MatrixXd &data);
         std::string write(std::vector<std::string> &param_names, std::vector<Eigen::VectorXd> &data);
         Eigen::MatrixXd read(const std::string &paramName);
+        std::string write(std::string &filename, std::vector<dz_communicate::SSMData> &data);
+        void read(std::string &filename_, std::vector<dz_communicate::SSMData> &data);
         void readAllParams(std::vector<Eigen::VectorXd> &data, std::vector<double> &time);
+        void Squeread(std::vector<std::vector<dz_communicate::SSMData>> &data);
+        std::string Squewrite(std::vector<std::vector<dz_communicate::SSMData>> &data);
         bool checkParam(const std::string &paramName);
         bool checkFile(const std::string &filename);
         void del(std::string filename);

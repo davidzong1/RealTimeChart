@@ -1,9 +1,16 @@
 #include "mainwindow.h"
 #include "ui_mainwindow.h"
 #include <cmath>
+#include <regex>
 #define skselect true
 #define smselect false
+
+using namespace dz_communicate;
 void dataUpdateFcn(MainWindow *obj);
+void clear_item(std::vector<item_tree> &a);
+void clear_data_point(std::vector<std::vector<SSMData>> &a);
+int getDataIndex(std::string name);
+std::pair<SSMData *, int> getDataFromItem(QTreeWidgetItem *son, std::vector<SSMData> &rev_data);
 MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent), ui(new Ui::MainWindow)
 {
@@ -249,8 +256,7 @@ bool MainWindow::eventFilter(QObject *watched, QEvent *event)
 }
 void dataUpdateFcn(MainWindow *obj)
 {
-    static bool data_flag = false;
-    static bool cout_flag = false;
+    bool name_set_flag = false;
     timespec next_time;
     while (1)
     {
@@ -258,62 +264,102 @@ void dataUpdateFcn(MainWindow *obj)
         next_time.tv_sec += (next_time.tv_nsec + 0.001 * 1e9) / 1e9;
         next_time.tv_nsec = (int)(next_time.tv_nsec + 0.001 * 1e9) % (int)1e9;
         /* 连接中断 */
+        std::vector<SSMData> rev_cache_cache;
         if (obj->connect_flag && !obj->exit_sem)
         {
-            Eigen::MatrixXd rev_cache_cache;
-            rev_cache_cache = obj->com->read(obj->select_state); // 读取数据
-            if (rev_cache_cache.size() == 0)
+            rev_cache_cache.clear();                                                /* 清空缓存 */
+            bool rev_flag = obj->com->squeread(rev_cache_cache, obj->select_state); // 读取数据
+            if (rev_flag)                                                           /* 接收成功 */
             {
-                std::cout << "Timeout occurred while waiting result." << std::endl;
-                obj->exit_sem = true;
-                data_flag = false;
-                continue;
-            }
-            if (rev_cache_cache.rows() != 0 && rev_cache_cache.cols() != 0)
-            {
-                obj->data_rev_mutex.lock();
-                obj->rev_cache = rev_cache_cache;
-                if (!data_flag)
+                if (rev_cache_cache.size() == 0)
                 {
-                    data_flag = true;
-                    obj->Data_name->clear();
-                    int data_size = obj->rev_cache.rows() - 1;
-                    obj->data_item.resize(data_size);
-                    obj->line_color.clear();
-                    for (int i = 0; i < data_size; i++)
+                    std::cout << "Timeout occurred while waiting result." << std::endl;
+                    name_set_flag = false;
+                    obj->exit_sem = true;
+                }
+                else
+                {
+                    obj->data_rev_mutex.lock();
+                    obj->rev_cache = rev_cache_cache;
+                    if (!name_set_flag)
                     {
-                        obj->data_item[i] = new QTreeWidgetItem(obj->Data_name);
-                        obj->data_item[i]->setFlags(obj->data_item[i]->flags() | Qt::ItemIsUserCheckable);
-                        obj->data_item[i]->setCheckState(0, Qt::Unchecked);          // 0 表示第一列，Qt::Checked 表示选中打勾
-                        obj->data_item[i]->setText(0, "Data " + QString::number(i)); // 设置第一列的文本
-                        obj->line_color.push_back(obj->randomColor());
+                        clear_item(obj->data_item);
+                        clear_data_point(obj->data);
+                        // obj->data_item.resize(rev_cache_cache.size());
+                        // obj->data.resize(rev_cache_cache.size());
+                        // for (int i = 0; i < rev_cache_cache.size(); i++) /* 子项目顶层 */
+                        // {
+                        //     cache_size = rev_cache_cache[i].size();
+                        //     QTreeWidgetItem *motheritem = new QTreeWidgetItem(obj->Data_name);
+                        //     motheritem->setText(0, QString::fromStdString(rev_cache_cache[i].name));
+                        //     motheritem->setCheckState(0, Qt::Unchecked);
+                        //     for (int j = 0; j < cache_size; j++) /* 子项目 */
+                        //     {
+                        //         QTreeWidgetItem *item = new QTreeWidgetItem(motheritem);
+                        //         item->setFlags(item->flags() | Qt::ItemIsUserCheckable);
+                        //         item->setText(0, QString::fromStdString("Data" + std::to_string(j)));
+                        //         item->setCheckState(0, Qt::Unchecked);
+                        //         data_item[i].son_item.push_back(item);
+                        //     }
+                        //     obj->data_item[i].mother_item = motheritem;
+                        //     obj->Data_name->collapseItem(obj->data_item[i].mother_item); /* 默认处于折叠状态 */
+                        // }
                     }
+                    // 在dataUpdateFcn函数中修改相关代码
+                    if (obj->data_mutex.try_lock()) /* 记录数据 */
+                    {
+                        // 检查并更新数据容器
+                        for (int i = 0; i < rev_cache_cache.size(); i++)
+                        {
+                            std::string data_name = rev_cache_cache[i].name;
+                            // 查找数据名称对应的索引
+                            auto it = obj->data_index_map.find(data_name);
+                            size_t index;
+                            if (it == obj->data_index_map.end())
+                            {
+                                // 未找到对应索引,创建新容器
+                                index = obj->data.size();
+                                obj->data_index_map[data_name] = index;
+                                obj->data.push_back(std::vector<SSMData>());
+                                /* 添加QT列表 */
+                                QTreeWidgetItem *motheritem = new QTreeWidgetItem(obj->Data_name);
+                                motheritem->setText(0, QString::fromStdString(data_name));
+                                motheritem->setCheckState(0, Qt::Unchecked);
+                                for (int j = 0; j < rev_cache_cache[i].data.size(); j++) /* 子项目 */
+                                {
+                                    QTreeWidgetItem *item = new QTreeWidgetItem(motheritem);
+                                    item->setFlags(item->flags() | Qt::ItemIsUserCheckable);
+                                    item->setText(0, QString::fromStdString("Data" + std::to_string(j)));
+                                    item->setCheckState(0, Qt::Unchecked);
+                                    obj->data_item[i].son_item.push_back(item);
+                                }
+                                obj->data_item[i].mother_item = motheritem;
+                                obj->Data_name->collapseItem(obj->data_item[i].mother_item); /* 默认处于折叠状态 */
+                            }
+                            else
+                            {
+                                // 使用已存在的索引
+                                index = it->second;
+                            }
+                            // 将数据添加到对应容器
+                            obj->data[index].push_back(rev_cache_cache[i]);
+                        }
+                        obj->data_mutex.unlock();
+                    }
+                    obj->data_rev_mutex.unlock();
+                    obj->data_ready = true;
                 }
-                if (obj->data_mutex.try_lock())
-                {
-                    obj->data_time.push_back(std::to_string(rev_cache_cache(0, 0)));
-                    obj->data.push_back(rev_cache_cache.block(1, 0, rev_cache_cache.rows() - 1, 1));
-                    obj->data_mutex.unlock();
-                }
-                obj->data_rev_mutex.unlock();
-                cout_flag = false;
-                obj->data_ready = true;
-            }
-            else
-            {
-                if (!cout_flag)
-                    std::cout << "Data is NULL" << std::endl;
-                cout_flag = true;
             }
         }
         /* 主动中断 */
         else if (obj->host_intrupt && !obj->exit_sem)
         {
             obj->exit_sem = true;
+            name_set_flag = false;
         }
         else
         {
-            data_flag = false;
+            name_set_flag = false;
         }
         clock_nanosleep(CLOCK_MONOTONIC, TIMER_ABSTIME, &next_time, NULL);
     }
@@ -323,65 +369,94 @@ void MainWindow::onDataNameItemChanged(QTreeWidgetItem *item, int column)
     /* data_item阻塞，当data_item清除所有选中时为真 */
     if (!data_item_blocked)
     {
-        int index = Data_name->indexOfTopLevelItem(item);
-        if (index == -1)
+        if (item->parent() != nullptr && item->parent()->parent() == nullptr)
         {
-            std::cout << "Error: " << "Item not found" << std::endl;
-            return;
-        }
-        if (item->checkState(column) == Qt::Checked)
-        {
-            show_index.push_back(index);
-        }
-        else
-        {
-            show_index.erase(std::remove(show_index.begin(), show_index.end(), index), show_index.end());
-        }
-        /* 离线画图 */
-        if (offline_image_mode)
-        {
-            bool has_read_file = false;
-            customPlot->clearGraphs();
-            double max_vaule = 1;
-            double min_value = -1;
-            std::vector<Eigen::VectorXd> *data_ptr; // 指向data的指针
-            has_read_file = read_doc_data.size() == 0 ? false : true;
-            if (!has_read_file)
+            QTreeWidgetItem *motherItem = item->parent(); // 获取子项目对应的母项目
+            if (motherItem == nullptr)
             {
-                data_ptr = &data;
+                std::cout << "Error: " << "Mother item not found" << std::endl;
+                return;
+            }
+            if (item->checkState(column) == Qt::Checked)
+            {
+                show_index.push_back(item);
+                motherItem->setBackground(0, QBrush(Qt::yellow)); // 将母项目背景变为黄色
+                motherItem->setForeground(0, QBrush(Qt::red));    // 将母项目字体变为红色
             }
             else
             {
-                data_ptr = &read_doc_data;
-            }
-            while (customPlot->graphCount() < (int)show_index.size())
-            {
-                customPlot->addGraph();
-            }
-            for (std::vector<double>::size_type j = 0; j < show_index.size(); j++)
-            {
-                for (std::vector<Eigen::VectorXd>::size_type i = 0; i < data_ptr->size(); i++)
+                show_index.erase(std::remove(show_index.begin(), show_index.end(), item), show_index.end());
+                // 检查母项目的所有子项目是否都未选中，如果是，则恢复母项目的背景颜色
+                bool anyChildChecked = false;
+                for (int i = 0; i < motherItem->childCount(); ++i)
                 {
-                    if (!has_read_file)
-                        customPlot->graph(j)->addData(std::stod((data_time)[i]), (*data_ptr)[i](show_index[j]));
-                    else
-                        customPlot->graph(j)->addData(read_data_time[i], (*data_ptr)[i](show_index[j]));
-                    if (max_vaule < (*data_ptr)[i](show_index[j]))
-                        max_vaule = (*data_ptr)[i](show_index[j]);
-                    if (min_value > (*data_ptr)[i](show_index[j]))
-                        min_value = (*data_ptr)[i](show_index[j]);
+                    if (motherItem->child(i)->checkState(column) == Qt::Checked)
+                    {
+                        anyChildChecked = true;
+                        break;
+                    }
                 }
-                customPlot->graph(j)->setName(QString("Data %1").arg(j + 1));     // 设置图例名称
-                customPlot->graph(j)->setPen(QPen(line_color[show_index[j]], 2)); // 设置线条颜色和宽度
+
+                if (!anyChildChecked)
+                {
+                    motherItem->setBackground(0, QBrush(Qt::NoBrush)); // 恢复母项目背景颜色
+                    motherItem->setForeground(0, QBrush(Qt::NoBrush)); // 将母项目字体变为黑色
+                }
             }
-            QFont legendFont = font();                                                                    // 使用默认字体
-            legendFont.setPointSize(9);                                                                   // 设置字体大小
-            customPlot->legend->setFont(legendFont);                                                      // 设置图例字体
-            customPlot->axisRect()->insetLayout()->setInsetAlignment(0, Qt::AlignBottom | Qt::AlignLeft); // 设置图例位置
-            customPlot->legend->setBrush(QBrush(QColor(255, 255, 255, 150)));
-            customPlot->rescaleAxes(true);                     // 调整坐标轴范围以适应数据
-            customPlot->yAxis->setRange(min_value, max_vaule); // 保持10秒的数据
-            customPlot->replot();
+            /* 离线画图 */
+            if (offline_image_mode)
+            {
+                customPlot->clearGraphs();
+                double max_vaule = 1;
+                double min_value = -1;
+                std::vector<std::vector<SSMData>> *data_ptr; // 指向data的指针
+                if (!has_offline_data)
+                {
+                    data_ptr = &data;
+                }
+                else
+                {
+                    data_ptr = &read_doc_data;
+                }
+                auto &data_ref = *data_ptr; // 引用data
+                while (customPlot->graphCount() < (int)show_index.size())
+                {
+                    customPlot->addGraph();
+                    line_color.push_back(randomColor()); // 随机生成颜色
+                }
+                /* 显示个数循环 */
+                for (std::vector<double>::size_type j = 0; j < show_index.size(); j++)
+                {
+                    std::string mother_name = item->parent()->text(0).toStdString();
+                    int data_index = getDataIndex(item->text(0).toStdString());
+                    /* 母项目循环 */
+                    for (int i = 0; i < data_ref.size(); i++)
+                    {
+                        if (mother_name == data_ref[i][0].name)
+                        {
+                            /* 子项目选中循环 */
+                            for (int z = 0; z < data_ref[i].size(); z++)
+                            {
+                                customPlot->graph(j)->addData(data_ref[i][z].time, data_ref[i][z].data(data_index));
+                                if (max_vaule < data_ref[i][z].data(data_index))
+                                    max_vaule = data_ref[i][z].data(data_index);
+                                if (min_value > data_ref[i][z].data(data_index))
+                                    min_value = data_ref[i][z].data(data_index);
+                            }
+                            customPlot->graph(j)->setName(QString::fromStdString(data_ref[i][0].name) + QString("/Data %1").arg(j + 1)); // 设置图例名称
+                            customPlot->graph(j)->setPen(QPen(line_color[j], 2));                                                        // 设置线条颜色和宽度
+                        }
+                    }
+                }
+                QFont legendFont = font();                                                                    // 使用默认字体
+                legendFont.setPointSize(9);                                                                   // 设置字体大小
+                customPlot->legend->setFont(legendFont);                                                      // 设置图例字体
+                customPlot->axisRect()->insetLayout()->setInsetAlignment(0, Qt::AlignBottom | Qt::AlignLeft); // 设置图例位置
+                customPlot->legend->setBrush(QBrush(QColor(255, 255, 255, 150)));
+                customPlot->rescaleAxes(true);                     // 调整坐标轴范围以适应数据
+                customPlot->yAxis->setRange(min_value, max_vaule); // 保持10秒的数据
+                customPlot->replot();
+            }
         }
     }
 }
@@ -390,41 +465,47 @@ void MainWindow::onDataNameItemChanged(QTreeWidgetItem *item, int column)
  */
 void MainWindow::updatePlot()
 {
-    double max_vaule = 1;
-    double min_value = -1;
-    Eigen::VectorXd cache;
-    std::vector<double> show_data;
+    static double max_vaule = 1;
+    static double min_value = -1;
+    double show_time_axi; /* 显示轴 */
+    std::vector<SSMData> cache;
+    SSMData *show_data;
     if (data_ready && connect_flag)
     {
         data_rev_mutex.lock();
-        time_axi = rev_cache(0, 0);
-        cache = rev_cache.block(1, 0, rev_cache.rows() - 1, 1);
+        cache = rev_cache;
         data_ready = false;
         data_rev_mutex.unlock();
-        for (int i = 0; i < cache.size(); i++)
-        {
-            if (max_vaule < cache(i))
-                max_vaule = cache(i);
-            if (min_value > cache(i))
-                min_value = cache(i);
-        }
         if (followKey)
         {
-            for (auto i = 0; i < show_index.size(); i++)
-            {
-                show_data.push_back(cache(show_index[i]));
-            }
-            while (customPlot->graphCount() < (int)show_data.size())
+            while (customPlot->graphCount() < (int)show_index.size())
             {
                 customPlot->addGraph();
+                line_color.push_back(randomColor()); // 随机生成颜色
             }
-            for (std::vector<double>::size_type i = 0; i < show_data.size(); i++)
+            for (std::vector<double>::size_type i = 0; i < show_index.size(); i++)
             {
-                customPlot->graph(i)->addData(time_axi, show_data[i]);
+                auto [data_ptr, index] = getDataFromItem(show_index[i], cache);
+                if (data_ptr) // 数据有效，可以使用
+                {
+                    show_data = data_ptr;
+                }
+                else // 处理错误情况
+                {
+                    std::cout << "Data Name: " << data_ptr->name << "is not found!" << std::endl;
+                }
+                /* 显示上下限处理 */
+                if (max_vaule < show_data->data(index))
+                    max_vaule = show_data->data(index);
+                if (min_value > show_data->data(index))
+                    min_value = show_data->data(index);
+                if (i == 0)
+                    show_time_axi = show_data->time; // 设置时间轴,第一个数据为基准
+                customPlot->graph(i)->addData(show_data->time, show_data->data(index));
                 customPlot->graph(i)->rescaleValueAxis(true);
-                customPlot->graph(i)->setName(QString("Data %1").arg(i + 1));     // 设置图例名称
-                customPlot->graph(i)->setPen(QPen(line_color[show_index[i]], 2)); // 设置线条颜色和宽度
-                                                                                  // 限制每条曲线只记录5000个点
+                customPlot->graph(i)->setName(QString::fromStdString(show_data->name) + QString("/Data %1").arg(index)); // 设置图例名称
+                customPlot->graph(i)->setPen(QPen(line_color[i], 2));                                                    // 设置线条颜色和宽度
+                                                                                                                         // 限制每条曲线只记录5000个点
                 if (customPlot->graph(i)->data()->size() > 5000)
                 {
                     auto it = customPlot->graph(i)->data()->at(customPlot->graph(i)->data()->size() - 5000);
@@ -436,17 +517,22 @@ void MainWindow::updatePlot()
             customPlot->legend->setFont(legendFont);                                                      // 设置图例字体
             customPlot->axisRect()->insetLayout()->setInsetAlignment(0, Qt::AlignBottom | Qt::AlignLeft); // 设置图例位置
             customPlot->legend->setBrush(QBrush(QColor(255, 255, 255, 150)));
-            if (time_axi < 3)
+            if (show_time_axi < 3)
             {
                 customPlot->xAxis->setRange(0, 3); // 保持10秒的数据
             }
             else
             {
-                customPlot->xAxis->setRange(time_axi - 3, time_axi);
+                customPlot->xAxis->setRange(show_time_axi - 3, show_time_axi);
             }
             customPlot->yAxis->setRange(min_value, max_vaule); // 保持10秒的数据
             customPlot->replot();
         }
+    }
+    else if (!connect_flag) /* 断链清空范围 */
+    {
+        double max_vaule = 1;
+        double min_value = -1;
     }
 }
 
@@ -518,6 +604,8 @@ void MainWindow::onConnectButtonClicked()
                 com = new dz_communicate::dz_com(high_level, key, true);
             }
             std::cout << "Connecting success" << std::endl;
+            has_offline_data = false; /* 复位离线相关操作 */
+            ReadDataClear();          /* 清空读取文件的内存 */
             // 模拟连接成功
             connect_flag = true;
             updateConnectButton();
@@ -556,7 +644,6 @@ void MainWindow::updateConnectButton()
 {
     if (connect_flag) /* 刚连接，清除此前缓存 */
     {
-        time_axi = 0;              // 清除所有轴
         customPlot->clearGraphs(); // 清除所有图形
         QPalette palette = connect_button->palette();
         palette.setColor(QPalette::Button, Qt::red); // 使用预定义的颜色常量
@@ -571,14 +658,21 @@ void MainWindow::updateConnectButton()
  */
 void MainWindow::onSaveButtonClicked()
 {
-    std::string name;
-    data_mutex.lock();
-    name = Data_io.write(data_time, data);
-    data_mutex.unlock();
-    if (name != "")
-        std::cout << name << " save success" << std::endl;
+    if (connect_flag)
+    {
+        std::cout << "Please Disconnect the connection!!!!!" << std::endl;
+    }
     else
-        std::cout << "save failed" << std::endl;
+    {
+        std::string name;
+        data_mutex.lock();
+        name = Data_io.Squewrite(data); /* 写入数据 */
+        data_mutex.unlock();
+        if (name != "")
+            std::cout << name << " save success" << std::endl;
+        else
+            std::cout << "save failed" << std::endl;
+    }
 }
 /**
  * @brief 离线图像槽函数
@@ -593,30 +687,32 @@ void MainWindow::OfflineImagePlant()
             return;
         }
         customPlot->clearGraphs(); // 清除所有图形
-        time_axi = 0;              // 清除所有轴
-        data_item_blocked = true;
-        for (auto i = 0; i < data_item.size(); i++) /* 清除所有选项 */
+        show_index.clear();
+        std::vector<std::vector<dz_communicate::SSMData>> *data_ptr;
+        if (read_doc_data.size() != 0 && has_offline_data) /* 重置列表，重置为读取文档的 */
         {
-            data_item[i]->setCheckState(0, Qt::Unchecked); // 0 表示第一列，Qt::Checked 表示选中打勾
+            data_ptr = &read_doc_data;
+        }
+        else /* 离线显示刚在线接收的文件 */
+        {
+            data_ptr = &data;
+        }
+        data_item_blocked = true;
+        line_color.clear();                         /* 清除所有颜色 */
+        Data_name->clear();                         /* 清除所有数据 */
+        for (auto i = 0; i < data_item.size(); i++) /* 清除所有打勾 */
+        {
+            for (auto j = 0; j < data_item[i].son_item.size(); j++)
+            {
+                data_item[i].son_item[j]->setFlags(data_item[i].son_item[j]->flags() | Qt::ItemIsUserCheckable); /* 设置打勾 */
+                data_item[i].son_item[j]->setCheckState(0, Qt::Unchecked);                                       // 0 表示第一列，Qt::Checked 表示选中打勾
+                data_item[i].son_item[j]->setText(0, "Data " + QString::number(j));
+            }
+            data_item[i].mother_item->setCheckState(0, Qt::Unchecked); // 0 表示第一列，Qt::Checked 表示选中打勾
+            data_item[i].mother_item->setText(0, "Data " + QString::number(i));
+            Data_name->collapseItem(data_item[i].mother_item); // 折叠子项
         }
         data_item_blocked = false;
-        show_index.clear();
-        if (read_doc_data.size() != 0)
-        {
-            /* 显示子项目 */
-            Data_name->clear();
-            int data_size = read_doc_data[0].rows();
-            data_item.resize(data_size);
-            line_color.clear();
-            for (int i = 0; i < data_size; i++)
-            {
-                data_item[i] = new QTreeWidgetItem(Data_name);
-                data_item[i]->setFlags(data_item[i]->flags() | Qt::ItemIsUserCheckable);
-                data_item[i]->setCheckState(0, Qt::Unchecked);          // 0 表示第一列，Qt::Checked 表示选中打勾
-                data_item[i]->setText(0, "Data " + QString::number(i)); // 设置第一列的文本
-                line_color.push_back(randomColor());
-            }
-        }
         std::cout << "Offline Image Mode" << std::endl;
         offline_image_mode = true;
     }
@@ -625,4 +721,57 @@ void MainWindow::OfflineImagePlant()
         std::cout << "Please Disconnect" << std::endl;
         return;
     }
+}
+
+void clear_item(std::vector<item_tree> &a)
+{
+    for (int i = 0; i < a.size(); i++)
+    {
+        for (int j = 0; j < a[i].son_item.size(); j++)
+        {
+            delete a[i].son_item[j];
+        }
+        delete a[i].mother_item;
+    }
+    a.clear();
+}
+
+void clear_data_point(std::vector<std::vector<SSMData>> &a)
+{
+    for (int i = 0; i < a.size(); i++)
+    {
+        a[i].clear();
+    }
+    a.clear();
+}
+int getDataIndex(std::string name)
+{
+    std::regex pattern("data(\\d+)");
+    std::smatch result;
+
+    if (std::regex_search(name, result, pattern))
+    {
+        std::string number_str = result[1];
+        return std::stoi(number_str);
+    }
+}
+std::pair<SSMData *, int> getDataFromItem(QTreeWidgetItem *son, std::vector<SSMData> &rev_data)
+{
+    if (!son || !son->parent())
+    {
+        return std::make_pair(nullptr, -1);
+    }
+
+    std::string mother_name = son->parent()->text(0).toStdString();
+    int data_index = getDataIndex(son->text(0).toStdString());
+
+    for (auto &data : rev_data)
+    {
+        if (data.name == mother_name)
+        {
+            return std::make_pair(&data, data_index);
+        }
+    }
+
+    return std::make_pair(nullptr, -1);
 }

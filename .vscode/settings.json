@@ -38,7 +38,10 @@
   "C_Cpp_Runner.compilerArgs": [],
   "C_Cpp_Runner.linkerArgs": [],
   "C_Cpp_Runner.includePaths": [],
-  "C_Cpp_Runner.includeSearch": ["*", "**/*"],
+  "C_Cpp_Runner.includeSearch": [
+    "*",
+    "**/*"
+  ],
   "C_Cpp_Runner.excludeSearch": [
     "**/build",
     "**/build/**",
@@ -126,6 +129,8 @@
     "any": "cpp",
     "codecvt": "cpp",
     "*.ipp": "cpp",
-    "core": "cpp"
+    "core": "cpp",
+    "regex": "cpp",
+    "filesystem": "cpp"
   }
 }

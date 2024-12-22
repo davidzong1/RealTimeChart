@@ -18,16 +18,20 @@
 #include <QColor>
 #include "dziostream.h"
 #include "qcustomplot.h"
-#include "dz_sm_socket_top.h"
 #include "IOopperator.h"
 #include <Eigen/Dense>
 QT_BEGIN_NAMESPACE
+
+typedef struct
+{
+    QTreeWidgetItem *mother_item;            /* 母项目 */
+    std::vector<QTreeWidgetItem *> son_item; /* 子项目 */
+} item_tree;
 namespace Ui
 {
     class MainWindow;
 }
 QT_END_NAMESPACE
-
 class MainWindow : public QMainWindow
 {
     Q_OBJECT
@@ -63,7 +67,8 @@ private:
     QPushButton *read_data_button; // 读取数据按钮
     QButtonGroup *buttonGroup;
     QTreeWidget *Data_name; /* 数据显示 */
-    std::vector<QTreeWidgetItem *> data_item;
+    std::vector<item_tree> data_item;
+    std::vector<std::string> data_item_name;
     QTimer *dataTimer;      // 定时器用于定期更新图表
     QTimer *exitCheckTimer; // 定时器用于定期检查退出信号
     QPoint lastMousePos;    // 鼠标位置
@@ -83,22 +88,22 @@ private:
     void onDataNameItemChanged(QTreeWidgetItem *item, int column);
     void onLoadCsvButtonClicked();
     void checkExitSemaphore();
+    void ReadDataClear();
 
 private:
+    std::unordered_map<std::string, size_t> data_index_map; // 数据名称到索引的映射
     bool connecting_flag = false;
     bool data_item_blocked = false;
-    double time_axi = 0;             // x轴时间
     std::thread *data_update_thread; /* 数据更新线程 */
-    Eigen::MatrixXd rev_cache;
+    std::vector<dz_communicate::SSMData> rev_cache;
     bool data_ready = false;
     bool offline_image_mode = false;
     bool select_state;
     bool connect_flag = false; // 连接标志
-    std::vector<Eigen::VectorXd> data;
+    std::vector<std::vector<dz_communicate::SSMData>> data;
     std::vector<std::string> data_time;
-    std::vector<Eigen::VectorXd> read_doc_data;
-    std::vector<double> read_data_time;
-    std::vector<int> show_index;
+    std::vector<std::vector<dz_communicate::SSMData>> read_doc_data;
+    std::vector<QTreeWidgetItem *> show_index;
     std::vector<QColor> line_color;
     dz_communicate::dz_com *com;
     dz_io::IOoperator Data_io; /* 保存文件操作口 */
@@ -109,5 +114,7 @@ private:
     /* 退出同步 */
     bool exit_sem = false;
     bool host_intrupt = false; /* 主动断链 */
+    /* 离线操作 */
+    bool has_offline_data = false; /* 已读取离线文件标识符 */
 };
 #endif // MAINWINDOW_H

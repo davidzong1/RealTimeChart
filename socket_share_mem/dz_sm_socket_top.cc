@@ -472,13 +472,13 @@ namespace dz_communicate
         int *row, *col;
         double *cache;
         std::tie(row, size) = this->read<int>(socket_or_sm);
-        if (row == nullptr && size == 0)
+        if (row == nullptr || size == 0)
             return data;
         std::tie(col, size) = this->read<int>(socket_or_sm);
-        if (col == nullptr && size == 0)
+        if (col == nullptr || size == 0)
             return data;
         std::tie(cache, size) = this->read<double>(socket_or_sm);
-        if (cache == nullptr && size == 0)
+        if (cache == nullptr || size == 0)
             return data;
         data.resize(*row, *col);
         data = Eigen::Map<Eigen::MatrixXd>(cache, *row, *col);
@@ -487,6 +487,94 @@ namespace dz_communicate
         free(cache);
         return data;
     }
+#ifdef lcmOn
+    /**
+     * @brief 写入SSMData类型的数据,建议仅在block_read模式下使用
+     * @param data
+     * @param socket_or_sm
+     */
+    void dz_com::write(SSMData &data, bool socket_or_sm)
+    {
+        if (!ser_or_topic)
+        {
+            throw std::runtime_error("SSMData write is not allowed in topic mode");
+        }
+        char *name_cache = strdup(data.name.c_str());
+        while (1)
+        {
+            if (!this->write(name_cache, data.name.size(), socket_or_sm))
+                break;
+        }
+        Eigen::MatrixXd temp = data.data;
+        this->write(temp, socket_or_sm);
+        free(name_cache);
+    }
+    /**
+     * @brief 读取SSMData类型的数据,建议仅在block_read模式下使用
+     * @param socket_or_sm
+     * @return SSMData
+     */
+    SSMData dz_com::readssm(bool socket_or_sm)
+    {
+        if (!ser_or_topic)
+        {
+            throw std::runtime_error("SSMData write is not allowed in topic mode");
+        }
+        int size;
+        char *name_cache;
+        double *time_cache;
+        Eigen::MatrixXd data_cache;
+        SSMData ret;
+        std::tie(name_cache, size) = this->read<char>(socket_or_sm);
+        if (name_cache == nullptr || size == 0)
+            return ret;
+        ret.name = std::string(name_cache);
+        free(name_cache);
+        std::tie(time_cache, size) = this->read<double>(socket_or_sm);
+        if (time_cache == nullptr || size == 0)
+            return ret;
+        ret.time = *time_cache;
+        free(time_cache);
+        data_cache = this->read(socket_or_sm);
+        if (data_cache.size() == 0)
+            return ret;
+        ret.data = data_cache.col(0);
+        return ret;
+    }
+    void dz_com::squewrite(std::vector<SSMData> &data, bool socket_or_sm)
+    {
+        int size = data.size();
+        while (1)
+        {
+            if (!this->write(&(size), sizeof(int), socket_or_sm))
+                break;
+        }
+        for (auto &i : data)
+        {
+            this->write(i, socket_or_sm);
+        }
+    }
+    bool dz_com::squeread(std::vector<SSMData> &data, bool socket_or_sm)
+    {
+        SSMData cache;
+        auto [size_cache, size_of_size] = read<int>(socket_or_sm); // 直接读取大小
+
+        if (size_of_size == 0 || size_cache == nullptr)
+            return false;
+        int size = *size_cache;
+        for (int i = 0; i < size; i++)
+        {
+            cache = this->readssm(socket_or_sm);
+            if (cache.data.size() == 0 || cache.name == "" || cache.time == -1.0)
+            {
+                data.clear();
+                return false;
+            }
+            data.push_back(cache);
+        }
+        return true;
+    }
+#endif
 #endif
 
     dz_com::~dz_com()
