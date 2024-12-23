@@ -554,6 +554,7 @@ namespace dz_communicate
             this->write(i, socket_or_sm);
         }
     }
+
     bool dz_com::squeread(std::vector<SSMData> &data, bool socket_or_sm)
     {
         SSMData cache;

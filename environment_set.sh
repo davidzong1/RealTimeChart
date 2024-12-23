@@ -4,7 +4,25 @@ sudo add-apt-repository ppa:beineri/opt-qt-6.5.3-jammy
 # 更新包索引
 sudo apt update
 
-sudo apt install -y libtbb-dev 
+
+# 安装Qt6
+sudo apt install -y qt6-base-dev
+sudo apt install -y qt6-base-private-dev
+
+# 安装Qt6开发工具
+sudo apt install -y qt6-tools-dev-tools
+
+# 安装Qt6开发工具
+sudo apt install -y qt6-tools-dev-tools
+
+# 安装Qt6开发工具
+sudo apt install -y qt6-tools-dev-tools
+
+# 安装Qt6开发工具
+sudo apt install -y qt6-tools-dev-tools
+
+# 安装Qt6开发工具
+sudo apt install -y libtbb-dev
 sudo apt install -y xcb
 sudo apt-get install -y libtbb-dev
 sudo apt-get install -y libxcb1-dev libxcb-glx0-dev libxcb-render0-dev \
