@@ -505,6 +505,11 @@ namespace dz_communicate
             if (!this->write(name_cache, data.name.size(), socket_or_sm))
                 break;
         }
+        while (1)
+        {
+            if (!this->write(&(data.time), sizeof(double), socket_or_sm))
+                break;
+        }
         Eigen::MatrixXd temp = data.data;
         this->write(temp, socket_or_sm);
         free(name_cache);
