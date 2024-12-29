@@ -8,8 +8,9 @@
 class QTextEditStream : public std::ostream
 {
 public:
-    QTextEditStream(QTextEdit *textEdit)
-        : std::ostream(&buffer), buffer(textEdit) {}
+    QTextEditStream(QTextEdit *textEdit) : std::ostream(&buffer), buffer(textEdit)
+    {
+    }
 
 private:
     class Buffer : public std::streambuf
@@ -17,22 +18,24 @@ private:
     public:
         Buffer(QTextEdit *textEdit) : textEdit(textEdit)
         {
-            setp(buffer, buffer + sizeof(buffer) - 1); // 设置初始缓冲区指针
+            setp(buffer, buffer + sizeof(buffer) - 1);
         }
 
         int sync() override
         {
             if (this->pbase() != this->pptr())
-            { // 检查是否有数据需要刷新
-                QString message = QString::fromUtf8(this->pbase(), this->pptr() - this->pbase());
-                textEdit->moveCursor(QTextCursor::End); // 移动光标到文档末尾
-                // 设置文本颜色为黑色
+            {
+                // 使用QByteArray确保正确处理UTF-8
+                QByteArray utf8Data(this->pbase(), this->pptr() - this->pbase());
+                QString message = QString::fromUtf8(utf8Data);
+
+                textEdit->moveCursor(QTextCursor::End);
                 QTextCharFormat format;
                 format.setForeground(Qt::black);
                 textEdit->mergeCurrentCharFormat(format);
-                textEdit->insertPlainText(message); // 插入新文本
-                textEdit->ensureCursorVisible();    // 确保光标可见
-                // 重置缓冲区指针
+                textEdit->insertPlainText(message);
+                textEdit->ensureCursorVisible();
+
                 this->setp(buffer, buffer + sizeof(buffer) - 1);
             }
             return 0;
@@ -44,17 +47,17 @@ private:
             {
                 return traits_type::not_eof(v);
             }
-            else
-            {
-                *pptr() = static_cast<char>(v);
-                pbump(1);
-                return sync() == 0 ? v : traits_type::eof();
-            }
+
+            // 处理UTF-8字符
+            *pptr() = static_cast<char>(v);
+            pbump(1);
+
+            return sync() == 0 ? v : traits_type::eof();
         }
 
     private:
         QTextEdit *textEdit;
-        char buffer[128]; // 缓冲区大小可以根据需求调整
+        char buffer[1024]; // 增大缓冲区以容纳更多UTF-8字符
     } buffer;
 };
 #endif

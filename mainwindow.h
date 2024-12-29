@@ -1,25 +1,24 @@
 #ifndef MAINWINDOW_H
 #define MAINWINDOW_H
 
-#include <QMainWindow>
-#include <QEvent>
-#include <QObject>
-#include <QMouseEvent>
-#include <QLineEdit>
-#include <QVBoxLayout>
-#include <QHBoxLayout>
-#include <QLineEdit>
-#include <QPushButton>
-#include <QLabel>
-#include <QSpacerItem>
-#include <QTextEdit>
-#include <QMenu>
-#include <QDateTime>
-#include <QColor>
+#include "IOopperator.h"
 #include "dziostream.h"
 #include "qcustomplot.h"
-#include "IOopperator.h"
 #include <Eigen/Dense>
+#include <QColor>
+#include <QDateTime>
+#include <QEvent>
+#include <QHBoxLayout>
+#include <QLabel>
+#include <QLineEdit>
+#include <QMainWindow>
+#include <QMenu>
+#include <QMouseEvent>
+#include <QObject>
+#include <QPushButton>
+#include <QSpacerItem>
+#include <QTextEdit>
+#include <QVBoxLayout>
 QT_BEGIN_NAMESPACE
 
 typedef struct
@@ -42,6 +41,8 @@ public:
 
 protected:
     bool eventFilter(QObject *watched, QEvent *event) override;
+signals:
+    void loadCsvCompleted(); // 添加新信号
 
 private:
     Ui::MainWindow *ui;
@@ -101,12 +102,11 @@ private:
     bool select_state;
     bool connect_flag = false; // 连接标志
     std::vector<std::vector<dz_communicate::SSMData>> data;
-    std::vector<std::string> data_time;
+    // std::vector<std::string> data_time;
     std::vector<std::vector<dz_communicate::SSMData>> read_doc_data;
     std::vector<QTreeWidgetItem *> show_index;
     std::vector<QColor> line_color;
     dz_communicate::dz_com *com;
-    dz_io::IOoperator Data_io; /* 保存文件操作口 */
     std::mutex data_mutex;     /* 数据更新互斥锁 */
     std::mutex data_rev_mutex; /* 数据接收互斥锁 */
     void resetConnectButton();
@@ -115,6 +115,10 @@ private:
     bool exit_sem = false;
     bool host_intrupt = false; /* 主动断链 */
     /* 离线操作 */
+    std::string offline_file_name; /* 离线文件名 */
     bool has_offline_data = false; /* 已读取离线文件标识符 */
+    QTimer *m_timer;
+    QProgressDialog *m_progress;
+    std::mutex data_op_mutex; /* data容器操作互斥锁 */
 };
 #endif // MAINWINDOW_H

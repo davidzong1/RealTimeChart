@@ -528,7 +528,10 @@ namespace dz_communicate
         std::tie(name_cache, size) = this->read<char>(socket_or_sm);
         if (name_cache == nullptr || size == 0)
             return ret;
-        ret.name = std::string(name_cache);
+        char nam[size + 1];
+        memcpy(nam, name_cache, size);
+        nam[size] = '\0';
+        ret.name = std::string(nam);
         free(name_cache);
         std::tie(time_cache, size) = this->read<double>(socket_or_sm);
         if (time_cache == nullptr || size == 0)
@@ -605,4 +608,4 @@ namespace dz_communicate
         }
         /* 释放读写缓存 */
     }
-}
+} // namespace dz_communicate
