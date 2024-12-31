@@ -557,9 +557,51 @@ namespace dz_communicate
             if (!this->write(&(size), sizeof(int), socket_or_sm))
                 break;
         }
-        for (auto &i : data)
+        size = 0;
+        for (int i = 0; i < data.size(); i++)
         {
-            this->write(i, socket_or_sm);
+            size += data[i].data.size() + 2;
+        }
+        int char_size = 0;
+        for (int i = 0; i < data.size(); i++)
+        {
+            char_size += data[i].name.size() + 1;
+        }
+        char name_cache[char_size];
+        char *name_cache_ptr = name_cache;
+        double time_cache[data.size()];
+        double data_cache[size];
+        double *ptr = data_cache;
+        for (int i = 0; i < data.size(); i++)
+        {
+            name_cache_ptr = strcpy(name_cache_ptr, data[i].name.c_str());
+            name_cache_ptr += data[i].name.size() + 1;
+            time_cache[i] = data[i].time;
+            for (int j = 0; j < data[i].data.size(); j++)
+            {
+                *ptr = data[i].data(j);
+                ptr++;
+            }
+            *ptr = std::numeric_limits<double>::infinity();
+            ptr++;
+            *ptr = -std::numeric_limits<double>::infinity();
+            ptr++;
+        }
+        name_cache_ptr = name_cache;
+        while (1)
+        {
+            if (!this->write(name_cache, char_size, socket_or_sm))
+                break;
+        }
+        while (1)
+        {
+            if (!this->write(time_cache, sizeof(double) * data.size(), socket_or_sm))
+                break;
+        }
+        while (1)
+        {
+            if (!this->write(data_cache, sizeof(double) * size, socket_or_sm))
+                break;
         }
     }
 
@@ -571,16 +613,55 @@ namespace dz_communicate
         if (size_of_size == 0 || size_cache == nullptr)
             return false;
         int size = *size_cache;
+        int data_size;
+        char *name_cache;
+        double *time_cache;
+        double *data_cache;
+        std::tie(name_cache, data_size) = this->read<char>(socket_or_sm); // 读取名字
+        if (data_size == 0 || name_cache == nullptr)
+            return false;
+        std::tie(time_cache, data_size) = this->read<double>(socket_or_sm); // 读取时间
+        if (data_size == 0 || time_cache == nullptr)
+        {
+            free(name_cache);
+            return false;
+        }
+        std::tie(data_cache, data_size) = this->read<double>(socket_or_sm); // 读取数据
+        if (data_size == 0 || data_cache == nullptr)
+        {
+            free(name_cache);
+            free(time_cache);
+            return false;
+        }
+        char *name_cache_ptr = name_cache;
+        double *ptr = data_cache;
+        size_t pos = 0;
+        std::string name;
         for (int i = 0; i < size; i++)
         {
-            cache = this->readssm(socket_or_sm);
-            if (cache.data.size() == 0 || cache.name == "" || cache.time == -1.0)
+            name.clear();
+            while (*name_cache_ptr != '\0')
             {
-                data.clear();
-                return false;
+                name.push_back(*name_cache_ptr);
+                name_cache_ptr++;
             }
+            name_cache_ptr++;
+            std::vector<double> data_cacahe;
+            cache.name = name;
+            cache.time = time_cache[i];
+            std::vector<double> data_cache1; // 修正拼写错误
+            while (!(std::isinf(*ptr) && std::isinf(*(ptr + 1))))
+            {
+                data_cache1.push_back(*ptr);
+                ptr++;
+            }
+            ptr += 2;
+            cache.data = Eigen::Map<Eigen::VectorXd>(data_cache1.data(), data_cache1.size());
             data.push_back(cache);
         }
+        free(name_cache);
+        free(time_cache);
+        free(data_cache);
         return true;
     }
 #endif

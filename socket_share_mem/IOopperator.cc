@@ -465,7 +465,7 @@ namespace dz_io
 
             // 构建并执行 zip 命令
             std::stringstream zipCommand;
-            zipCommand << "zip -j " << zipName;
+            zipCommand << "zip -j " << path + zipName;
             for (const auto &filename : filenames)
             {
                 zipCommand << " " << path << filename;

@@ -273,7 +273,6 @@ void dataUpdateFcn(MainWindow *obj)
             {
                 if (rev_cache_cache.size() == 0)
                 {
-                    std::cout << "Timeout occurred while waiting result." << std::endl;
                     name_set_flag = false;
                     obj->exit_sem = true;
                 }
@@ -679,12 +678,8 @@ void MainWindow::onSaveButtonClicked()
     // 创建定时器
     m_timer = new QTimer(this);
     connect(m_timer, &QTimer::timeout, this, [this, &Data_io]() {
-        data_mutex.lock();
         int currentProgress = Data_io.get_progress();
-        data_mutex.unlock();
-
         m_progress->setValue(currentProgress);
-
         if (currentProgress >= 100)
         {
             m_timer->stop();
